@@ -4,7 +4,7 @@ from custom_vec import VEC
 from random import *
 from math import *
 
-WIDTH = 600
+WIDTH = 800
 HEIGHT = 600
 FPS = 144
 
@@ -47,6 +47,7 @@ class Ball:
         if -6 < self.vel.y < 6:
             self.vel.y = 0
         self.pos += self.vel * dt
+
         new_region = inttup(self.pos // (sizes[1] * 2) + VEC(1, 1))
         if self.region != new_region:
             if new_region in __class__.regions:
@@ -63,12 +64,12 @@ class Ball:
                         dist = self.pos.distance_to(ball.pos)
                         if dist <= self.radius + ball.radius and ball != self:
                             overlap = -(dist - self.radius - ball.radius)
-                            self.pos += overlap * (self.pos - ball.pos) / dist
-                            ball.pos -= overlap * (self.pos - ball.pos) / dist
+                            self.pos += overlap * (self.pos - ball.pos).normalize()
+                            ball.pos -= overlap * (self.pos - ball.pos).normalize()
                             self.vel *= 0.85
                             n = (ball.pos - self.pos).normalize()
                             k = self.vel - ball.vel
-                            p = 2.0 * (n * k) / (self.mass + ball.mass)
+                            p = 2 * (n * k) / (self.mass + ball.mass)
                             self.vel -= p * ball.mass * n
                             ball.vel += p * self.mass * n
 
@@ -107,17 +108,15 @@ while running:
             running = False
         if event.type == MOUSEBUTTONDOWN:
             mpos = VEC(pygame.mouse.get_pos())
-            if sum([len(balls) for balls in Ball.regions.values()]) <= 150:
+            if sum([len(balls) for balls in Ball.regions.values()]) <= 1000:
                 Ball(mpos)
         if event.type == KEYDOWN:
             if event.key == K_c:
                 for ball in Ball.instances.copy():
                     ball.kill()
 
-    for region in Ball.regions.copy():
-        for ball in Ball.regions[region]:
-            ball.update()
     for ball in Ball.instances:
+        ball.update()
         ball.draw(screen)
 
     pygame.display.flip()
