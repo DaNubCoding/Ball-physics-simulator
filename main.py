@@ -1,12 +1,12 @@
 import pygame
 from pygame.locals import *
-from custom_vec import VEC
 from random import *
 from math import *
 
-WIDTH = 800
+WIDTH = 1200
 HEIGHT = 600
-FPS = 144
+FPS = float("inf")
+VEC = pygame.math.Vector2
 
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT), HWSURFACE | DOUBLEBUF)
@@ -33,19 +33,17 @@ class Ball:
             __class__.regions[self.region].append(self)
         else:
             __class__.regions[self.region] = [self]
-        self.vel = VEC(uniform(-750, 750), uniform(-500, 250))
+        self.vel = VEC(0, 0)
         self.radius = randint(*sizes)
         self.mass = self.radius ** 2 * pi
         self.color = (choice(colors), choice(colors), choice(colors))
         self.moving = True
+        self.collisions = []
 
-    def update(self):
+    def update_position(self):
         self.vel.y += gravity * dt
-        self.vel -= self.vel.normalize()
-        if -6 < self.vel.x < 6:
-            self.vel.x = 0
-        if -6 < self.vel.y < 6:
-            self.vel.y = 0
+        if self.vel != VEC(0, 0):
+            self.vel -= self.vel.normalize() * 160 * dt
         self.pos += self.vel * dt
 
         new_region = inttup(self.pos // (sizes[1] * 2) + VEC(1, 1))
@@ -57,21 +55,28 @@ class Ball:
             __class__.regions[self.region].remove(self)
             self.region = new_region
 
+    def update_pushout(self):
+        self.collisions = []
         for x in range(self.region[0] - 1, self.region[0] + 2):
             for y in range(self.region[1] - 1, self.region[1] + 2):
                 if (x, y) in __class__.regions:
                     for ball in __class__.regions[(x, y)]:
                         dist = self.pos.distance_to(ball.pos)
-                        if dist <= self.radius + ball.radius and ball != self:
-                            overlap = -(dist - self.radius - ball.radius)
-                            self.pos += overlap * (self.pos - ball.pos).normalize()
-                            ball.pos -= overlap * (self.pos - ball.pos).normalize()
-                            self.vel *= 0.85
-                            n = (ball.pos - self.pos).normalize()
-                            k = self.vel - ball.vel
-                            p = 2 * (n * k) / (self.mass + ball.mass)
-                            self.vel -= p * ball.mass * n
-                            ball.vel += p * self.mass * n
+                        if dist < self.radius + ball.radius and ball != self:
+                            self.collisions.append(ball)
+                            overlap = -(dist - self.radius - ball.radius) * 0.5
+                            pushout = overlap * (self.pos - ball.pos).normalize() if self.pos - ball.pos != VEC(0, 0) else VEC(0, 0)
+                            self.pos += pushout
+                            ball.pos -= pushout
+    
+    def update_collision(self):
+        for ball in self.collisions:
+            self.vel *= 0.85
+            n = (ball.pos - self.pos).normalize() if ball.pos - self.pos != VEC(0, 0) else VEC(0, 0)
+            k = self.vel - ball.vel
+            p = 2 * (n * k) / (self.mass + ball.mass)
+            self.vel -= p * ball.mass * n
+            ball.vel += p * self.mass * n
 
         if self.pos.x < self.radius:
             self.vel.x *= -0.8
@@ -100,8 +105,8 @@ class Ball:
 running = True
 while running:
     dt = clock.tick_busy_loop(FPS) / 1000
-    screen.fill((0, 0, 0))
-    pygame.display.set_caption(f"Bouncy balls with physics | FPS: {str(int(clock.get_fps()))}")
+    screen.fill((30, 30, 30))
+    pygame.display.set_caption(f"Bouncy balls with physics | FPS: {str(int(clock.get_fps()))} | Ball count: {len(Ball.instances)}")
 
     for event in pygame.event.get():
         if event.type == QUIT:
@@ -115,8 +120,11 @@ while running:
                 for ball in Ball.instances.copy():
                     ball.kill()
 
+    # shuffle(Ball.instances)
     for ball in Ball.instances:
-        ball.update()
+        ball.update_position()
+        ball.update_pushout()
+        ball.update_collision()
         ball.draw(screen)
 
     pygame.display.flip()
