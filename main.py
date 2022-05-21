@@ -1,3 +1,4 @@
+from re import sub
 import pygame
 from pygame.locals import *
 from custom_vec import VEC
@@ -6,17 +7,17 @@ from math import *
 
 WIDTH = 600
 HEIGHT = 600
-FPS = 144
+FPS = float("inf")
 
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT), HWSURFACE | DOUBLEBUF)
 pygame.display.set_caption("Bouncy balls with physics")
 clock = pygame.time.Clock()
 
-gravity = 3200
-air_friction = 0.99
-colors = range(50, 255, 10)
-sizes = (15, 25)
+gravity = 1000
+border_elasticity = 0.8
+sub_steps = 8
+sizes = (10, 20)
 
 absvec = lambda v: VEC(abs(v.x), abs(v.y))
 inttup = lambda tup: tuple((int(tup[0]), int(tup[1])))
@@ -27,26 +28,41 @@ class Ball:
 
     def __init__(self, pos):
         __class__.instances.append(self)
+        self.radius = sizes[1]
         self.pos = VEC(pos)
+        self.old_pos = self.pos
+        self.vel = self.pos - self.old_pos
+        self.acc = VEC(0, 0)
+        self.color = (255, 255, 255)
         self.region = inttup(self.pos // (sizes[1] * 2) + VEC(1, 1))
         if self.region in __class__.regions:
             __class__.regions[self.region].append(self)
         else:
             __class__.regions[self.region] = [self]
-        self.vel = VEC(uniform(-750, 750), uniform(-500, 250))
-        self.radius = randint(*sizes)
-        self.mass = self.radius ** 2 * pi
-        self.color = (choice(colors), choice(colors), choice(colors))
-        self.moving = True
 
-    def update(self):
-        self.vel.y += gravity * dt
-        self.vel -= self.vel.normalize()
-        if -6 < self.vel.x < 6:
-            self.vel.x = 0
-        if -6 < self.vel.y < 6:
-            self.vel.y = 0
-        self.pos += self.vel * dt
+    def apply_acceleration(self):
+        self.acc.y += gravity * sqrt(sqrt(sqrt(sqrt(sqrt(sub_steps)))))
+
+    def handle_collisions(self):
+        for x in range(self.region[0] - 1, self.region[0] + 2):
+            for y in range(self.region[1] - 1, self.region[1] + 2):
+                if (x, y) in __class__.regions:
+                    for ball in __class__.regions[(x, y)]:
+                        axis = self.pos - ball.pos
+                        dist = axis.length()
+                        rad_sum = self.radius + ball.radius
+                        if dist < rad_sum:
+                            n = axis.normalize()
+                            d = rad_sum - dist
+                            self.pos += 0.5 * d * n
+                            ball.pos -= 0.5 * d * n
+
+    def update_position(self, dt):
+        self.vel = self.pos - self.old_pos
+        self.old_pos = self.pos.copy()
+        self.pos += self.vel + self.acc * dt ** 2
+        self.acc = VEC(0, 0)
+
         new_region = inttup(self.pos // (sizes[1] * 2) + VEC(1, 1))
         if self.region != new_region:
             if new_region in __class__.regions:
@@ -56,37 +72,19 @@ class Ball:
             __class__.regions[self.region].remove(self)
             self.region = new_region
 
-        for x in range(self.region[0] - 1, self.region[0] + 2):
-            for y in range(self.region[1] - 1, self.region[1] + 2):
-                if (x, y) in __class__.regions:
-                    for ball in __class__.regions[(x, y)]:
-                        dist = self.pos.distance_to(ball.pos)
-                        if dist <= self.radius + ball.radius and ball != self:
-                            overlap = -(dist - self.radius - ball.radius)
-                            self.pos += overlap * (self.pos - ball.pos) / dist
-                            ball.pos -= overlap * (self.pos - ball.pos) / dist
-                            self.vel *= 0.85
-                            n = (ball.pos - self.pos).normalize()
-                            k = self.vel - ball.vel
-                            p = 2.0 * (n * k) / (self.mass + ball.mass)
-                            self.vel -= p * ball.mass * n
-                            ball.vel += p * self.mass * n
-
-        if self.pos.x < self.radius:
-            self.vel.x *= -0.8
-            self.pos.x = self.radius
-        elif self.pos.x > WIDTH - self.radius:
-            self.vel.x *= -0.8
+    def handle_constraints(self):
+        if self.pos.x > WIDTH - self.radius:
             self.pos.x = WIDTH - self.radius
-        if self.pos.y < self.radius:
-            self.vel.y *= -0.8
-            self.pos.y = self.radius
-        elif self.pos.y > HEIGHT - self.radius:
-            if self.vel.y <= gravity * dt:
-                self.vel.y = 0
-            else:
-                self.vel.y *= -0.8
+            self.old_pos.x = self.pos.x + self.vel.x * border_elasticity
+        elif self.pos.x < 0 + self.radius:
+            self.pos.x = 0 + self.radius
+            self.old_pos.x = self.pos.x + self.vel.x * border_elasticity
+        if self.pos.y > HEIGHT - self.radius:
             self.pos.y = HEIGHT - self.radius
+            self.old_pos.y = self.pos.y + self.vel.y * border_elasticity
+        elif self.pos.y < 0 + self.radius:
+            self.pos.y = 0 + self.radius
+            self.old_pos.y = self.pos.y + self.vel.y * border_elasticity
 
     def draw(self, screen):
         pygame.draw.circle(screen, self.color, self.pos, self.radius)
@@ -107,16 +105,20 @@ while running:
             running = False
         if event.type == MOUSEBUTTONDOWN:
             mpos = VEC(pygame.mouse.get_pos())
-            if sum([len(balls) for balls in Ball.regions.values()]) <= 150:
+            if sum([len(balls) for balls in Ball.regions.values()]) <= 1000:
                 Ball(mpos)
         if event.type == KEYDOWN:
             if event.key == K_c:
                 for ball in Ball.instances.copy():
                     ball.kill()
 
-    for region in Ball.regions.copy():
-        for ball in Ball.regions[region]:
-            ball.update()
+    sub_dt = dt / sub_steps
+    for _ in range(sub_steps):
+        for ball in Ball.instances:
+            ball.apply_acceleration()
+            ball.handle_constraints()
+            ball.handle_collisions()
+            ball.update_position(sub_dt)
     for ball in Ball.instances:
         ball.draw(screen)
 
