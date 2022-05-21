@@ -14,9 +14,9 @@ screen = pygame.display.set_mode((WIDTH, HEIGHT), HWSURFACE | DOUBLEBUF)
 pygame.display.set_caption("Bouncy balls with physics")
 clock = pygame.time.Clock()
 
-gravity = 1000
+gravity = 1200
 border_elasticity = 0.8
-sub_steps = 8
+sub_steps = 1
 sizes = (10, 20)
 
 absvec = lambda v: VEC(abs(v.x), abs(v.y))
@@ -46,16 +46,15 @@ class Ball:
     def handle_collisions(self):
         for x in range(self.region[0] - 1, self.region[0] + 2):
             for y in range(self.region[1] - 1, self.region[1] + 2):
-                if (x, y) in __class__.regions:
-                    for ball in __class__.regions[(x, y)]:
-                        axis = self.pos - ball.pos
-                        dist = axis.length()
-                        rad_sum = self.radius + ball.radius
-                        if dist < rad_sum:
-                            n = axis.normalize()
-                            d = rad_sum - dist
-                            self.pos += 0.5 * d * n
-                            ball.pos -= 0.5 * d * n
+                if (x, y) not in __class__.regions: continue
+                for ball in __class__.regions[(x, y)]:
+                    axis = self.pos - ball.pos
+                    dist = axis.length()
+                    overlap = self.radius + ball.radius - dist
+                    if overlap > 0 and dist > 0:
+                        fac = 1 / dist * overlap * 0.5
+                        self.pos += axis * fac
+                        ball.pos -= axis * fac
 
     def update_position(self, dt):
         self.vel = self.pos - self.old_pos
@@ -116,9 +115,9 @@ while running:
     for _ in range(sub_steps):
         for ball in Ball.instances:
             ball.apply_acceleration()
-            ball.handle_constraints()
             ball.handle_collisions()
             ball.update_position(sub_dt)
+            ball.handle_constraints()
     for ball in Ball.instances:
         ball.draw(screen)
 
